@@ -1,0 +1,2 @@
+g++ test.cpp `pkg-config opencv --libs --cflags` -lrealsense -std=c++11 -o test
+g++ real_cam.cc `pkg-config opencv --libs --cflags` -lrealsense -std=c++11 -o real_cam
