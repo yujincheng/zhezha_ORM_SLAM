@@ -19,19 +19,14 @@
 */
 
 
-#include<iostream>
-#include<algorithm>
-#include<fstream>
-#include<chrono>
-
-#include<opencv2/core/core.hpp>
-
-#include<System.h>
+#include <iostream>
+#include <algorithm>
+#include <chrono>
+#include <opencv2/core/core.hpp>
+#include <System.h>
 #include <unistd.h>
-
 #include <librealsense/rs.hpp>
 #include <sys/time.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,19 +36,17 @@
 #include <poll.h>
 #include <termios.h>
 #include <time.h>
+#include <iostream>
+#include <fstream>
+#include <cstdio>
 
 using namespace std;
-
-/////////////////////////////// code added /////////////////////////////
-
 using namespace cv;
-using namespace rs;
+//using namespace rs;
 
 #define SYSFS_GPIO_DIR "/sys/class/gpio"
 #define POLL_TIMEOUT (3 * 1000) /* 3 seconds */
 #define MAX_BUF 64
-
-
 
 typedef unsigned int jetsonGPIO ;
 typedef unsigned int pinDirection ;
@@ -93,8 +86,6 @@ enum jetsonTX1GPIONumber {
        gpio219 = 219,    // J21 - Pin 29 - Output - GPIO19_AUD_RST
 } ;
 
-
-
 int gpioExport ( jetsonGPIO gpio ) ;
 int gpioUnexport ( jetsonGPIO gpio ) ;
 int gpioSetDirection ( jetsonGPIO, pinDirection out_flag ) ;
@@ -105,39 +96,18 @@ int gpioOpen ( jetsonGPIO gpio ) ;
 int gpioClose ( int fileDescriptor ) ;
 int gpioActiveLow ( jetsonGPIO gpio, unsigned int value ) ;
 
-
-
 // Window size and frame rate
 int const INPUT_WIDTH      = 640;
 int const INPUT_HEIGHT     = 480;
 int const FRAMERATE        = 60;
 
-
-context      _rs_ctx;
-device&      _rs_camera = *_rs_ctx.get_device( 0 );
-intrinsics   _depth_intrin;
-intrinsics  _color_intrin;
+//context      _rs_ctx;
+//device       *_rs_camera;
+//intrinsics   _depth_intrin;
+//intrinsics  _color_intrin;
 bool         _loop = true;
 
-
-// Initialize the application state. Upon success will return the static app_state vars address
-
-bool initialize_streaming( )
-{
-       bool success = false;
-       if( _rs_ctx.get_device_count( ) > 0 )
-       {
-             _rs_camera.enable_stream( rs::stream::color, INPUT_WIDTH, INPUT_HEIGHT, rs::format::rgb8, FRAMERATE );
-             _rs_camera.enable_stream( rs::stream::depth, INPUT_WIDTH, INPUT_HEIGHT, rs::format::z16, FRAMERATE );
-             _rs_camera.start( );
-
-             success = true;
-       }
-       return success;
-}
-
 ///////////////////////////////////////////////////// origin code ///////////////////////
-
 
 int main(int argc, char **argv)
 {
@@ -146,13 +116,13 @@ int main(int argc, char **argv)
         cerr << endl << "Usage: ./online_orbslam2_realsense_monocular path_to_vocabulary path_to_settings" << endl;
         return 1;
     }
-	int flag = 1;
-    jetsonTX1GPIONumber redLED = gpio37 ;     // Ouput
-    gpioExport(redLED) ;
-    gpioSetDirection(redLED,outputPin);
-	gpioSetValue(redLED, on);
+	//int flag = 1;
+    //jetsonTX1GPIONumber redLED = gpio37 ;     // Ouput
+    //gpioExport(redLED) ;
+    //gpioSetDirection(redLED,outputPin);
+	//gpioSetValue(redLED, on);
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
-    ORB_SLAM2::System SLAM(argv[1],argv[2],ORB_SLAM2::System::RGBD,true);
+    ORB_SLAM2::System SLAM(argv[1],argv[2],ORB_SLAM2::System::RGBD,false);
 
     // Vector for tracking time statistics
     vector<float> vTimesTrack;
@@ -162,61 +132,61 @@ int main(int argc, char **argv)
 	
     //// Main loop
     //camera initialization
-    rs::log_to_console( rs::log_severity::warn );
-    if( !initialize_streaming( ) )
-    {
-     std::cout << "Unable to locate a camera" << std::endl;
-     rs::log_to_console( rs::log_severity::fatal );
-     return EXIT_FAILURE;
-    }
+    rs::context ctx;
+    printf("There are %d connected RealSense devices.\n", ctx.get_device_count());
+    if(ctx.get_device_count() == 0) return EXIT_FAILURE;
+
+    // This tutorial will access only a single device, but it is trivial to extend to multiple devices
+    rs::device * dev = ctx.get_device(0);
+    printf("\nUsing device 0, an %s\n", dev->get_name());
+    printf("    Serial number: %s\n", dev->get_serial());
+    printf("    Firmware version: %s\n", dev->get_firmware_version());
+
+    // Configure all streams to run at VGA resolution at 60 frames per second
+    dev->enable_stream(rs::stream::depth, 640, 480, rs::format::z16, 60);
+    dev->enable_stream(rs::stream::color, 640, 480, rs::format::rgb8, 60);
+    dev->enable_stream(rs::stream::infrared, 640, 480, rs::format::y8, 60);
+    try { dev->enable_stream(rs::stream::infrared2, 640, 480, rs::format::y8, 60); }
+    catch(...) { printf("Device does not provide infrared2 stream.\n"); }
+    dev->start();
+
     cv::Mat im, imD;
     struct timeval tv;
     std::string s1,s2,s;
     double d;
-    std::cout << "press q to quit!" << std::endl;
    
-    //usleep(1000000);
-    //gpioSetValue(redLED, off);   
-	_depth_intrin       = _rs_camera.get_stream_intrinsics( rs::stream::depth );
-	_color_intrin       = _rs_camera.get_stream_intrinsics( rs::stream::color ); 
-    while(true) //for(int ni=0; ni<nImages; ni++)
+    rs::intrinsics _depth_intrin = dev->get_stream_intrinsics( rs::stream::depth );
+	rs::intrinsics _color_intrin = dev->get_stream_intrinsics( rs::stream::color ); 
+    cv::FileStorage fsSettings(argv[2], cv::FileStorage::READ);
+    while(true) 
     {
-        // Read image from file
-        //im = cv::imread(string(argv[3])+"/"+vstrImageFilenames[ni],CV_LOAD_IMAGE_UNCHANGED);
-        double tframe; // = vTimestamps[ni];
-	if( _rs_camera.is_streaming( ) ){
-                    _rs_camera.wait_for_frames( );
-		   //debug chenjp 1 row
-		   //cout << "is streaming!" << endl;
-	}
-	
-	
-	
-        // Create depth image
-        imD = cv::Mat( _depth_intrin.height,
-                                  _depth_intrin.width,
-                                  CV_16U,
-                                  (uchar *)_rs_camera.get_frame_data( rs::stream::depth ) );
 
-	// Create color image
-        im = cv::Mat( _color_intrin.height,
-                            _color_intrin.width,
-                            CV_8UC3,
-                            (uchar *)_rs_camera.get_frame_data( rs::stream::color ) );
-	cv::cvtColor(im,im,cv::COLOR_BGR2RGB);
-	cv::Mat depth8u = imD;
-        depth8u.convertTo( depth8u, CV_8UC1, 255.0/1000 );
-	
-	//create time stamp
-	gettimeofday(&tv,NULL);
-	s1 = std::to_string(tv.tv_sec);
-	s2 = std::to_string(tv.tv_usec);
-	s = s1 + "." + s2;
-	d = std::stod(s);
-	tframe = d;
-	//debug chenjp 2rows
-	//cout << "file  names:" << vstrImageFilenames[ni] << endl;
-	//cout << "time stamps:" << vTimestamps[ni] << endl;
+        double tframe; 
+	    dev->wait_for_frames();
+	    
+        // Create depth image
+        imD = cv::Mat(  _depth_intrin.height,
+                        _depth_intrin.width,
+                        CV_16U,
+                        (uchar *)(dev->get_frame_data( rs::stream::depth )));
+
+	    // Create color image
+        im = cv::Mat(   _color_intrin.height,
+                        _color_intrin.width,
+                        CV_8UC3,
+                        (uchar *)(dev->get_frame_data( rs::stream::color )));
+
+        cv::cvtColor(im,im,cv::COLOR_BGR2RGB);
+        cv::Mat depth8u = imD;
+        depth8u.convertTo( depth8u, CV_8UC1, 255.0/1000);
+        
+        //create time stamp
+        gettimeofday(&tv,NULL);
+        s1 = std::to_string(tv.tv_sec);
+        s2 = std::to_string(tv.tv_usec);
+        s = s1 + "." + s2;
+        d = std::stod(s);
+        tframe = d;
 	
         if(im.empty())
         {
@@ -229,20 +199,7 @@ int main(int argc, char **argv)
 #else
         std::chrono::monotonic_clock::time_point t1 = std::chrono::monotonic_clock::now();
 #endif
-	if(flag)
-	{
-		gpioSetValue(redLED, off);
-		usleep(10);
-		gpioSetValue(redLED, on);
-		//usleep(100000);
-		//gpioSetValue(redLED, off);
-		//usleep(100);
-		//gpioSetValue(redLED, on);
-		flag=0;
-	}
-        // Pass the image to the SLAM system
         SLAM.TrackRGBD(im,imD,tframe);
-
 #ifdef COMPILEDWITHC11
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
 #else
@@ -252,21 +209,20 @@ int main(int argc, char **argv)
         double ttrack= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
 
         vTimesTrack.push_back(ttrack);
-	//cout << ttrack << endl;
-        // Wait to load the next frame
-        //double T=0;
-        //if(ni<nImages-1)
-        //    T = vTimestamps[ni+1]-tframe;
-        //else if(ni>0)
-        //    T = tframe-vTimestamps[ni-1];
-
-        //if(ttrack<T)
-         //   usleep((T-ttrack)*1e6);
-	if(cv::waitKey(30) == 27){break;}
+        
+        fstream _file;
+    
+        string slam_end_path = fsSettings["slam_end"];
+        _file.open(slam_end_path, ios::in);
+        if(_file)
+        {
+            if (remove(slam_end_path.c_str())==0)
+            {
+                printf("delete slam_end.txt");
+            }
+            break; 
+        }	
     }
-	gpioSetValue(redLED, off);
-		usleep(100);
-		gpioSetValue(redLED, on);
     // Stop all threads
     SLAM.Shutdown();
 
@@ -278,15 +234,18 @@ int main(int argc, char **argv)
     {
         totaltime+=vTimesTrack[ni];
     }
-    cout << "-------" << endl << endl;
+    cout << endl <<"-------" << endl << endl;
     cout << "median tracking time: " << vTimesTrack[nImages/2] << endl;
     cout << "mean tracking time: " << totaltime/nImages << endl;
 	
     // Save camera trajectory
     SLAM.SaveTrajectoryTUM("Trajectory.txt");
-	SLAM.SaveKeyFrameTrajectoryTUM("KeyTrajectory.txt");
-    gpioUnexport(redLED);     // unexport the LED
+    SLAM.SaveKeyFrameTrajectoryTUM("KeyTrajectory.txt");
 
+    
+    string scp_to_ip = fsSettings["scp_to_ip"];
+    string command_rd = "scp -i id_rsa -r *.txt " + scp_to_ip;
+    system(command_rd.c_str());
 
     return 0;
 }
@@ -540,7 +499,5 @@ int gpioActiveLow ( jetsonGPIO gpio, unsigned int value )
     close(fileDescriptor);
     return 0;
 }
-
-
 
 

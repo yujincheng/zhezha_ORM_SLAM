@@ -64,11 +64,7 @@ int main(int argc, char * argv[]){
 	double d;
 	std::cout << "hello realsense camera!" << std::endl;
 	cv::Mat im;
-	im = cv::imread("/media/nvidia/ZJU/orbslam2/TUM/rgbd_dataset_freiburg1_xyz/rgb/1305031102.175304.png",CV_LOAD_IMAGE_UNCHANGED);
-	cv::namedWindow("image", WINDOW_AUTOSIZE);
-	cv::imshow("image",im);
-	cv::waitKey();
-	rs::log_to_console( rs::log_severity::warn );
+//	im = cv::imread("/media/nvidia/ZJU/orbslam2/TUM/rgbd_dataset_freiburg1_xyz/rgb/1305031102.175304.png",CV_LOAD_IMAGE_UNCHANGED);
 
        if( !initialize_streaming( ) )
        {
@@ -98,6 +94,10 @@ int main(int argc, char * argv[]){
                                   CV_16U,
                                   (uchar *)_rs_camera.get_frame_data( rs::stream::depth ) );
 	d = double(im.at<Vec3b>(100,100)[0]);
+	cv::namedWindow("image", WINDOW_AUTOSIZE);
+	cv::imshow("image",im);
+	cv::waitKey();
+	rs::log_to_console( rs::log_severity::warn );
 	std::cout << d << std::endl;
 	//cv::cvtColor(im,im,cv::COLOR_BGR2RGB);
 	//im = rgb_img.clone();
